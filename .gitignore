@@ -1,0 +1,55 @@
+# Copyright (c) 2022-2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+# Licensed under the NVIDIA Source Code License [see LICENSE for details].
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+
+.vscode
+
+sam2act/data
+sam2act/data_colosseum
+sam2act/data_memory
+sam2act/replay
+sam2act/replay_temporal
+sam2act/replay_temporal_colosseum
+sam2act/replay_temporal_memory
+sam2act/runs
+sam2act/wandb
+
+sam2act/mvt/sam2_train/checkpoints/sam2_hiera_base_plus.pt
+sam2act/mvt/sam2_train/checkpoints/sam2_hiera_large.pt
+sam2act/mvt/sam2_train/checkpoints/sam2_hiera_small.pt
+sam2act/mvt/sam2_train/checkpoints/sam2_hiera_tiny.pt
+sam2act/mvt/sam2_train/checkpoints/sam2.1_hiera_base_plus.pt
+sam2act/mvt/sam2_train/checkpoints/sam2.1_hiera_large.pt
+sam2act/mvt/sam2_train/checkpoints/sam2.1_hiera_small.pt
+sam2act/mvt/sam2_train/checkpoints/sam2.1_hiera_tiny.pt
+
+sam2act/scripts.sh
