@@ -25,6 +25,7 @@
 
 <div align="center">
   <a href="https://arxiv.org/abs/2501.18564">[arXiv]</a>
+  <a href="https://huggingface.co/datasets/hqfang/MemoryBench">[Dataset]</a>
   <a href="https://sam2act.github.io">[Website]</a>
   <a href="https://x.com/DJiafei/status/1884954101697699940">[X Post]</a>
   <br></br>
