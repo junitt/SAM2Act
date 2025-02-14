@@ -32,10 +32,10 @@
   <a href="https://paperswithcode.com/sota/robot-manipulation-on-rlbench?p=sam2act-integrating-visual-foundation-model-1">
     <img src="https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/sam2act-integrating-visual-foundation-model-1/robot-manipulation-on-rlbench">
   </a>
-  <!-- <br>
+  <br>
   <a href="https://paperswithcode.com/sota/robot-manipulation-generalization-on-the?p=sam2act-integrating-visual-foundation-model-1">
-    <img src="https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/sam2act-integrating-visual-foundation-model-1/robot-manipulation-generalization-on-the">
-  </a> -->
+    <img src="https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/sota/robot-manipulation-generalization-on-the">
+  </a>
 </div>
 
 <br>
