@@ -280,18 +280,18 @@ def experiment(cmd_args, devices, rank, node_rank, world_size):
 
         torch.cuda.set_device(device)
         torch.cuda.empty_cache()
-        rvt = mvt_sam2.MVT_SAM2(
+        sam2act = mvt_sam2.MVT_SAM2(
             renderer_device=device,
             rank=rank,
             **mvt_cfg,
         ).to(device)
         if rank == 0:
-            get_model_size(rvt)
+            get_model_size(sam2act)
         if ddp:
-            rvt = DDP(rvt, device_ids=[device], find_unused_parameters=True)
+            sam2act = DDP(sam2act, device_ids=[device], find_unused_parameters=True)
 
         agent = sam2act_agent.SAM2Act_Agent(
-            network=rvt,
+            network=sam2act,
             image_resolution=[IMAGE_SIZE, IMAGE_SIZE],
             add_lang=mvt_cfg.add_lang,
             stage_two=mvt_cfg.stage_two,

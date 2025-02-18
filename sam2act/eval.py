@@ -287,7 +287,7 @@ def eval(
         assert log_dir is not None
 
         # create metric saving writer
-        csv_file = "eval_results_1.csv"
+        csv_file = "eval_results.csv"
         if not os.path.exists(os.path.join(log_dir, csv_file)):
             with open(os.path.join(log_dir, csv_file), "w") as csv_fp:
                 fieldnames = ["task", "success rate", "length", "total_transitions"]

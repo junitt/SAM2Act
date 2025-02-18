@@ -5,7 +5,7 @@ tasks: all
 agent: our
 demo: 100
 bs: 8
-num_workers: 3
+num_workers: 5
 epochs: 90
 sample_distribution_mode: task_uniform
 peract:

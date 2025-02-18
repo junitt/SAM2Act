@@ -12,13 +12,11 @@ _C.exp_id = "def"
 _C.resume = ""
 # bs per device, effective bs is scaled by num device
 _C.bs = 4
-_C.bs_mem = 4
 _C.epochs = 20
 # number of dataloader workers, >= 0
 _C.num_workers = 0
 # 'transition_uniform' or 'task_uniform'
 _C.sample_distribution_mode = 'transition_uniform'
-_C.sample_distribution_mode_mem = 'transition_uniform'
 _C.train_iter = 16 * 10000
 
 
