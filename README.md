@@ -24,16 +24,25 @@
 </p>
 
 <div align="center">
-  <a href="https://arxiv.org/abs/2501.18564">[arXiv]</a>
-  <a href="https://huggingface.co/datasets/hqfang/MemoryBench">[Dataset]</a>
-  <a href="https://sam2act.github.io">[Website]</a>
-  <a href="https://x.com/DJiafei/status/1884954101697699940">[X Post]</a>
-  <br></br>
-  <a href="https://paperswithcode.com/sota/robot-manipulation-on-rlbench?p=sam2act-integrating-visual-foundation-model-1">
-    <img src="https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/sam2act-integrating-visual-foundation-model-1/robot-manipulation-on-rlbench">
-  </a>
-  <br>
-
+  <p>
+    <a href="https://sam2act.github.io/">
+      <img src="https://img.shields.io/badge/Website-grey?logo=google-chrome&logoColor=white&labelColor=blue">
+    </a>
+    <a href="https://arxiv.org/abs/2501.18564">
+      <img src="https://img.shields.io/badge/arXiv-grey?logo=arxiv&logoColor=white&labelColor=red">
+    </a>
+    <a href="https://huggingface.co/datasets/hqfang/MemoryBench">
+      <img src="https://img.shields.io/badge/MemoryBench-grey?logo=huggingface&logoColor=white&labelColor=yellow">
+    </a>
+    <a href="https://x.com/DJiafei/status/1884954101697699940">
+      <img src="https://img.shields.io/badge/Post-grey?logo=x&logoColor=white&labelColor=black">
+    </a>
+  </p>
+  <p>
+    <a href="https://paperswithcode.com/sota/robot-manipulation-on-rlbench?p=sam2act-integrating-visual-foundation-model-1">
+      <img src="https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/sam2act-integrating-visual-foundation-model-1/robot-manipulation-on-rlbench">
+    </a>
+  </p>
 </div>
 
 <br>
@@ -236,10 +245,10 @@ torchrun --nproc_per_node="8" --nnodes="1" \
 
 ## Evaluation
 ### Evaluate SAM2Act on RLBench
-Download the [pretrained SAM2Act model (coming soon)](). Place the model (`model_89.pth` trained for 90 epochs or 56.25K steps with batch size 256) and the config files under the folder `SAM2Act/sam2act/runs/sam2act/`. Run evaluation using (from folder `SAM2Act/sam2act`):
+Download the [pretrained SAM2Act model](https://huggingface.co/datasets/hqfang/SAM2Act/tree/main/sam2act_rlbench). Place the model (`model_89.pth` trained for 90 epochs or 56.25K steps with batch size 256 using 32 A100 GPUs) and the config files under the folder `SAM2Act/sam2act/runs/sam2act_rlbench/`. The model checkpoint excludes optimizer state to save disk space. Run evaluation using (from folder `SAM2Act/sam2act`):
 ```
 python eval.py \
-  --model-folder runs/sam2act \
+  --model-folder runs/sam2act_rlbench \
   --eval-datafolder ./data/test \
   --tasks all \
   --eval-episodes 25 \
@@ -248,6 +257,8 @@ python eval.py \
   --headless \
   --model-name model_89.pth
 ```
+
+Note that the training process involves significant randomness, primarily due to how data is sampled in each batch (retraining may get different results as well). Additionally, randomness is introduced during evaluation by the sampling-based motion planner used in RLBench. As a result, the evaluation results of the pretrained SAM2Act may not be perfectly aligned with those reported in the paper, but they remain nearly identical. We evaluated the newly trained model four times, obtaining an average success rate of 86.8 ± 1.1.
 
 ### Evaluate SAM2Act+ on MemoryBench
 Download the [pretrained SAM2Act+ model (coming soon)]() for each task. Place the model (`model_plus_19.pth` trained for 20 epochs or 12.5K steps with batch size 320) and the config files under the folder `SAM2Act/sam2act/runs/sam2act_plus_<task_name>/`. Run evaluation using (from folder `SAM2Act/sam2act`):
