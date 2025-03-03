@@ -7,5 +7,5 @@ pyrender==0.1.45
 omegaconf
 hydra-core==1.0.5
 pandas==1.4.1
-opencv-python
-
+opencv-python-headless
+yacs
