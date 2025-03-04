@@ -22,6 +22,54 @@ class SAM2Act_Agent2(SAM2Act_Agent):
     def __init__(self, *args, **kwargs):
         super(SAM2Act_Agent2, self).__init__(*args, **kwargs)
 
+    def prepare_train_input(self,batch):
+        assert batch['pc_fts'].shape[-1]==7
+        assert batch['ee_poses'].shape[-1]==8
+        assert batch['txt_embeds'].shape[0]==int(77*len(batch['txt_lens']))
+        assert batch['txt_embeds'].shape[-1]==512
+        bs = len(batch['txt_lens'])
+        offsets=batch['offset'].cpu().numpy().tolist()
+        offsets=[0]+offsets
+        inp={
+            'pc': None,'img_feat':None,'proprio':None,'lang_goal_embs':None,
+            'wpt_local':None
+        }
+        inp['lang_goal_embs']=batch['txt_embeds'].reshape(bs,-1,512)
+        inp['proprio']=batch['ee_poses']
+        inp['pc']=[batch['pc_fts'][:, :3][offsets[i]:offsets[i+1]] for i in range(bs)]
+        inp['img_feat']=[(batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] + 1) / 2 for i in range(bs)]
+        #reverse normalize rgb
+
+        action_ignore_collisions = batch["gt_trajs_stop"].int()  # 转化成预测是否stop
+        action_gripper_pose = batch['gt_trajs'][:,:-1].reshape(bs,7)  # (b, 7)
+        action_trans_con = action_gripper_pose[:, 0:3]  # (b, 3)
+        # rotation in quaternion xyzw
+        action_rot = action_gripper_pose[:, 3:]
+        action_grip = batch['gt_trajs'][:,-1].reshape(bs).int()  # (b,)
+
+        lang_goal_embs = inp['lang_goal_embs']
+        tasks = None
+
+        proprio = inp['proprio']  
+        
+        pc, img_feat = inp['pc'], inp['img_feat']
+        out={
+            "pc":pc,
+            "img_feat":img_feat,
+            "proprio":proprio,
+            "lang_goal_embs":lang_goal_embs,
+            "action_trans_con":action_trans_con,
+            "action_rot":action_rot,
+            "action_grip":action_grip,
+            "action_ignore_collisions":action_ignore_collisions,
+            "action_gripper_pose":action_gripper_pose
+        }
+        return out
+
+    def prepare_act_input(self,batch):
+        pass
+    
+
     def __call__(self,batch, 
         backprop: bool = True,
         reset_log: bool = False,
@@ -51,43 +99,26 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         # batch['gt_trajs'][-1] -> obs.gripper_open
         # 时间信息使用batch['traj_lens']-stop后面有几个false
         bs = len(batch['txt_lens'])
-        assert batch['pc_fts'].shape[-1]==7
-        assert batch['ee_poses'].shape[-1]==8
-        assert batch['txt_embeds'].shape[0]==int(77*len(batch['txt_lens']))
-        assert batch['txt_embeds'].shape[-1]==512
-        offsets=batch['offset'].cpu().numpy().tolist()
-        offsets=[0]+offsets
-        inp={
-            'pc': None,'img_feat':None,'proprio':None,'lang_goal_embs':None,
-            'wpt_local':None
-        }
-        inp['lang_goal_embs']=batch['txt_embeds'].reshape(bs,-1,512)
-        inp['proprio']=batch['ee_poses']
-        inp['pc']=[batch['pc_fts'][:, :3][offsets[i]:offsets[i+1]] for i in range(bs)]
-        inp['img_feat']=[(batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] + 1) / 2 for i in range(bs)]
-        #reverse normalize rgb
-
-        action_ignore_collisions = batch["gt_trajs_stop"].int()  # 转化成预测是否stop
-        action_gripper_pose = batch['gt_trajs'][:,:-1].reshape(bs,7)  # (b, 7)
-        action_trans_con = action_gripper_pose[:, 0:3]  # (b, 3)
-        # rotation in quaternion xyzw
-        action_rot = action_gripper_pose[:, 3:]
-        action_grip = batch['gt_trajs'][:,-1].reshape(bs).int()  # (b,)
-
-        lang_goal_embs = inp['lang_goal_embs']
-        tasks = None
-
-        proprio = inp['proprio']  
         return_out = {}
+        input_dict = self.prepare_train_input(batch)
+
+        proprio = input_dict['proprio']
+        action_gripper_pose = input_dict['action_gripper_pose']
+        action_ignore_collisions = input_dict['action_ignore_collisions']
+        pc = input_dict['pc']
+        img_feat = input_dict['img_feat']
+        action_grip = input_dict["action_grip"]
+        lang_goal_embs = input_dict["lang_goal_embs"]
+        action_trans_con = input_dict["action_trans_con"]
+        action_rot = input_dict["action_rot"]
 
         assert action_grip.shape==(bs,)
-        
         assert proprio.shape==(bs,8)
         assert action_gripper_pose.shape==(bs,7)
         assert action_ignore_collisions.shape==(bs,1)
 
         with torch.no_grad():
-            pc, img_feat = inp['pc'], inp['img_feat']
+            
             if self._transform_augmentation and backprop:
                 if not self._same_trans_aug_per_seq:
                     pc_lst=[]
@@ -329,7 +360,151 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         return continuous_action,return_out
     @torch.no_grad()
     def _eval(self,batch):
-        return self.__call__(batch,False)
+        bs = len(batch['txt_lens'])
+        return_out = {}
+        input_dict = self.prepare_train_input(batch)
+
+        proprio = input_dict['proprio']
+        action_gripper_pose = input_dict['action_gripper_pose']
+        action_ignore_collisions = input_dict['action_ignore_collisions']
+        pc = input_dict['pc']
+        img_feat = input_dict['img_feat']
+        action_grip = input_dict["action_grip"]
+        lang_goal_embs = input_dict["lang_goal_embs"]
+        action_trans_con = input_dict["action_trans_con"]
+        action_rot = input_dict["action_rot"]
+        # TODO: Vectorize
+        pc_new = []
+        rev_trans = []
+        for _pc in pc:
+            a, b = mvt_utils.place_pc_in_cube(
+                _pc,
+                with_mean_or_bounds=self._place_with_mean,
+                scene_bounds=None if self._place_with_mean else self.scene_bounds,
+            )
+            pc_new.append(a)
+            rev_trans.append(b)
+        pc = pc_new
+
+        bs = len(pc)
+        nc = self._net_mod.num_img
+        h = w = self._net_mod.img_size
+        dyn_cam_info = None
+
+        out = self._network(
+            pc=pc,
+            img_feat=img_feat,
+            proprio=proprio,
+            lang_emb=lang_goal_embs,
+            img_aug=0,  # no img augmentation while acting
+        )
+        wpt = [x[:3] for x in action_trans_con]
+
+        wpt_local = []
+        rev_trans = []
+        for _pc, _wpt in zip(pc, wpt):
+            a, b = mvt_utils.place_pc_in_cube(
+                _pc,
+                _wpt,
+                with_mean_or_bounds=self._place_with_mean,
+                scene_bounds=None if self._place_with_mean else self.scene_bounds,
+            )
+            wpt_local.append(a.unsqueeze(0))
+            rev_trans.append(b)
+
+        wpt_local = torch.cat(wpt_local, axis=0)
+        q_trans, rot_q, grip_q, collision_q, y_q, pts = self.get_q(
+            out, dims=(bs, nc, h, w), only_pred=True, get_q_trans=True
+        )
+        pred_wpt, pred_rot_quat, pred_grip, pred_coll = self.get_pred(
+            out, rot_q, grip_q, collision_q, y_q, rev_trans, dyn_cam_info
+        )
+        action_trans = self.get_action_trans(
+            wpt_local, pts, out, dyn_cam_info, dims=(bs, nc, h, w)
+        )
+        (
+            action_rot_x_one_hot,
+            action_rot_y_one_hot,
+            action_rot_z_one_hot,
+            action_grip_one_hot, 
+            action_collision_one_hot, 
+        ) = self._get_one_hot_expert_actions(
+            bs, action_rot.cpu(), action_grip.cpu(), action_ignore_collisions.cpu(), device="cpu"
+        )
+        action_rot_x_one_hot = action_rot_x_one_hot.to(self._device)
+        action_rot_y_one_hot = action_rot_y_one_hot.to(self._device)
+        action_rot_z_one_hot = action_rot_z_one_hot.to(self._device)
+        action_grip_one_hot = action_grip_one_hot.to(self._device)
+        action_collision_one_hot = action_collision_one_hot.to(self._device)
+        # for batched eval
+        continuous_action = torch.cat(
+            [
+                pred_wpt.cpu(),
+                torch.tensor(pred_rot_quat),
+                pred_grip.cpu(),
+                pred_coll.cpu(),
+            ],1
+        ).numpy()
+
+        trans_loss = self._cross_entropy_loss(q_trans, action_trans).mean()
+        rot_loss_x = rot_loss_y = rot_loss_z = 0.0
+        grip_loss = 0.0
+        collision_loss = 0.0
+        rot_loss_x = self._cross_entropy_loss(
+            rot_q[
+                :,
+                0 * self._num_rotation_classes : 1 * self._num_rotation_classes,
+            ],
+            action_rot_x_one_hot.argmax(-1),
+        ).mean()
+
+        rot_loss_y = self._cross_entropy_loss(
+            rot_q[
+                :,
+                1 * self._num_rotation_classes : 2 * self._num_rotation_classes,
+            ],
+            action_rot_y_one_hot.argmax(-1),
+        ).mean()
+
+        rot_loss_z = self._cross_entropy_loss(
+            rot_q[
+                :,
+                2 * self._num_rotation_classes : 3 * self._num_rotation_classes,
+            ],
+            action_rot_z_one_hot.argmax(-1),
+        ).mean()
+
+        grip_loss = self._cross_entropy_loss(
+            grip_q,
+            action_grip_one_hot.argmax(-1),
+        ).mean()
+
+        collision_loss = self._cross_entropy_loss(
+            collision_q, action_collision_one_hot.argmax(-1)
+        ).mean()
+
+        total_loss = (
+            trans_loss
+            + rot_loss_x
+            + rot_loss_y
+            + rot_loss_z
+            + grip_loss
+            + collision_loss
+        )
+
+
+        loss_log = {
+            "total_loss": total_loss.item(),
+            "trans_loss": trans_loss.item(),
+            "rot_loss_x": rot_loss_x.item() if not self.use_memory else None,
+            "rot_loss_y": rot_loss_y.item() if not self.use_memory else None,
+            "rot_loss_z": rot_loss_z.item() if not self.use_memory else None,
+            "grip_loss": grip_loss.item() if not self.use_memory else None,
+            "collision_loss": collision_loss.item() if not self.use_memory else None,
+            "lr": self._optimizer.param_groups[0]["lr"],
+        }
+        return_out.update(loss_log)
+        return continuous_action,return_out
 
 def get_logdir(cmd_args, exp_cfg):
     exp = exp_cfg.exp_id + '_' + exp_cfg.exp_name
@@ -338,6 +513,7 @@ def get_logdir(cmd_args, exp_cfg):
     return log_dir
 
 def load_agent(cmd_args):
+    #TODO: distributed
     exp_cfg = exp_cfg_mod.get_cfg_defaults()
     if cmd_args.exp_cfg_path != "":
         exp_cfg.merge_from_file(cmd_args.exp_cfg_path)
