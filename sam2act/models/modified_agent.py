@@ -15,16 +15,21 @@ from sam2act.mvt.augmentation import apply_se3_aug_con, apply_se3_aug_con_same, 
 import sam2act.mvt.utils as mvt_utils
 import sam2act.utils.rvt_utils as rvt_utils
 import peract_colab.arm.utils as arm_utils
+from genrobo3d.utils.rvt_util import instr_trans,unify_color
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 
 class SAM2Act_Agent2(SAM2Act_Agent):
-    def __init__(self, *args, **kwargs):
+    def __init__(self,dataset_transform_color=False,use_sem=False, *args, **kwargs):
+        self.use_sem = use_sem
+        self.dataset_transform_color = dataset_transform_color
         super(SAM2Act_Agent2, self).__init__(*args, **kwargs)
+        if self._transform_augmentation:
+            print("use_transform")
 
-    def prepare_train_input(self,batch):
+    def prepare_train_input(self,batch,compute_loss=True):
         assert batch['pc_fts'].shape[-1]==7
-        assert batch['ee_poses'].shape[-1]==8
+        assert batch['ee_poses'].shape[-1]==self._net_mod.proprio_dim
         assert batch['txt_embeds'].shape[0]==int(77*len(batch['txt_lens']))
         assert batch['txt_embeds'].shape[-1]==512
         bs = len(batch['txt_lens'])
@@ -37,38 +42,49 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         inp['lang_goal_embs']=batch['txt_embeds'].reshape(bs,-1,512)
         inp['proprio']=batch['ee_poses']
         inp['pc']=[batch['pc_fts'][:, :3][offsets[i]:offsets[i+1]] for i in range(bs)]
-        inp['img_feat']=[(batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] + 1) / 2 for i in range(bs)]
-        #reverse normalize rgb
+        if self.dataset_transform_color:
+            inp['img_feat'] = [batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] for i in range(bs)]
+        else:
+            if self.dataset_transform_color and compute_loss==False:
+                inp['img_feat']=unify_color(batch['pc_labels'],batch['pc_fts'],offsets,bs)
+            else:
+                # print(f"color max{torch.max(torch.tensor(batch['pc_fts'][:, -3:]))}")
+                # print(f"color max{torch.min(torch.tensor(batch['pc_fts'][:, -3:]))}")
+                inp['img_feat']=[(batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] + 1)/2 for i in range(bs)]
+        if compute_loss:
+            action_ignore_collisions = batch["gt_trajs_stop"].int()  # 转化成预测是否stop
+            action_gripper_pose = batch['gt_trajs'][:,:-1].reshape(bs,7)  # (b, 7)
+            action_trans_con = action_gripper_pose[:, 0:3]  # (b, 3)
+            # rotation in quaternion xyzw
+            action_rot = action_gripper_pose[:, 3:]
+            action_grip = batch['gt_trajs'][:,-1].reshape(bs).int()  # (b,)
 
-        action_ignore_collisions = batch["gt_trajs_stop"].int()  # 转化成预测是否stop
-        action_gripper_pose = batch['gt_trajs'][:,:-1].reshape(bs,7)  # (b, 7)
-        action_trans_con = action_gripper_pose[:, 0:3]  # (b, 3)
-        # rotation in quaternion xyzw
-        action_rot = action_gripper_pose[:, 3:]
-        action_grip = batch['gt_trajs'][:,-1].reshape(bs).int()  # (b,)
+            lang_goal_embs = inp['lang_goal_embs']
+            tasks = None
 
-        lang_goal_embs = inp['lang_goal_embs']
-        tasks = None
-
-        proprio = inp['proprio']  
-        
-        pc, img_feat = inp['pc'], inp['img_feat']
-        out={
-            "pc":pc,
-            "img_feat":img_feat,
-            "proprio":proprio,
-            "lang_goal_embs":lang_goal_embs,
-            "action_trans_con":action_trans_con,
-            "action_rot":action_rot,
-            "action_grip":action_grip,
-            "action_ignore_collisions":action_ignore_collisions,
-            "action_gripper_pose":action_gripper_pose
-        }
+            proprio = inp['proprio']  
+            
+            pc, img_feat = inp['pc'], inp['img_feat']
+            out={
+                "pc":pc,
+                "img_feat":img_feat,
+                "proprio":proprio,
+                "lang_goal_embs":lang_goal_embs,
+                "action_trans_con":action_trans_con,
+                "action_rot":action_rot,
+                "action_grip":action_grip,
+                "action_ignore_collisions":action_ignore_collisions,
+                "action_gripper_pose":action_gripper_pose
+            }
+            
+        else:
+            out={
+                "pc":inp['pc'],
+                "img_feat":inp['img_feat'],
+                "proprio":inp['proprio'],
+                "lang_goal_embs":inp['lang_goal_embs']
+            }
         return out
-
-    def prepare_act_input(self,batch):
-        pass
-    
 
     def __call__(self,batch, 
         backprop: bool = True,
@@ -100,7 +116,7 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         # 时间信息使用batch['traj_lens']-stop后面有几个false
         bs = len(batch['txt_lens'])
         return_out = {}
-        input_dict = self.prepare_train_input(batch)
+        input_dict = self.prepare_train_input(batch,compute_loss=True)
 
         proprio = input_dict['proprio']
         action_gripper_pose = input_dict['action_gripper_pose']
@@ -113,7 +129,7 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         action_rot = input_dict["action_rot"]
 
         assert action_grip.shape==(bs,)
-        assert proprio.shape==(bs,8)
+        assert proprio.shape==(bs,self._net_mod.proprio_dim)
         assert action_gripper_pose.shape==(bs,7)
         assert action_ignore_collisions.shape==(bs,1)
 
@@ -178,9 +194,9 @@ class SAM2Act_Agent2(SAM2Act_Agent):
                     _action_rot = -_action_rot
                 action_rot[i] = _action_rot
             #剔除工作范围外的点,pc是列表每个元素(num_pt,3),各个元素不等长,并且只在这里存在剔除点，前面都是，(bsz,n_pts,3)的tensor
-            # pc, img_feat = rvt_utils.move_pc_in_bound(
-            #     pc, img_feat, self.scene_bounds, no_op=not self.move_pc_in_bound
-            # )
+            pc, img_feat = rvt_utils.move_list_pc_in_bound(
+                pc, img_feat, self.scene_bounds, no_op=not self.move_pc_in_bound
+            )
             wpt = [x[:3] for x in action_trans_con]
 
             wpt_local = []
@@ -206,7 +222,8 @@ class SAM2Act_Agent2(SAM2Act_Agent):
                 )[0]
                 for _pc in pc
             ]
-
+            for p in pc:
+                assert torch.all(p > -1.001) and torch.all(p < 1.001)
             bs = len(pc)
             nc = self._net_mod.num_img
             h = w = self._net_mod.img_size
@@ -246,7 +263,7 @@ class SAM2Act_Agent2(SAM2Act_Agent):
             # hm_gt = self.get_gt_hm(
             #     wpt_local, dyn_cam_info, dims=(bs, nc, h, w)
             # )
-
+            assert img_aug==0
             out = self._network(
                 pc=pc,
                 img_feat=img_feat,
@@ -359,20 +376,32 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         
         return continuous_action,return_out
     @torch.no_grad()
-    def _eval(self,batch):
+    def _eval(self,batch,compute_loss=True):
         bs = len(batch['txt_lens'])
         return_out = {}
-        input_dict = self.prepare_train_input(batch)
+        input_dict = self.prepare_train_input(batch,compute_loss)
 
         proprio = input_dict['proprio']
-        action_gripper_pose = input_dict['action_gripper_pose']
-        action_ignore_collisions = input_dict['action_ignore_collisions']
         pc = input_dict['pc']
         img_feat = input_dict['img_feat']
-        action_grip = input_dict["action_grip"]
         lang_goal_embs = input_dict["lang_goal_embs"]
-        action_trans_con = input_dict["action_trans_con"]
-        action_rot = input_dict["action_rot"]
+
+        if compute_loss:
+            action_grip = input_dict["action_grip"]
+            action_ignore_collisions = input_dict['action_ignore_collisions']
+            action_trans_con = input_dict["action_trans_con"]
+            action_rot = input_dict["action_rot"]
+        
+        # pc[0][:,-1]+=0.7
+        # x = pc[0]
+        # max_values, _ = torch.max(x, dim=0)  
+        # min_values, _ = torch.min(x, dim=0) 
+        # mean_values = torch.mean(x, dim=0)
+        # print(f"{max_values} {min_values}")
+        # print(f"mean {mean_values}")
+        pc, img_feat = rvt_utils.move_list_pc_in_bound(
+            pc, img_feat, self.scene_bounds, no_op=not self.move_pc_in_bound
+        )
         # TODO: Vectorize
         pc_new = []
         rev_trans = []
@@ -398,44 +427,28 @@ class SAM2Act_Agent2(SAM2Act_Agent):
             lang_emb=lang_goal_embs,
             img_aug=0,  # no img augmentation while acting
         )
-        wpt = [x[:3] for x in action_trans_con]
+        if compute_loss:
+            wpt = [x[:3] for x in action_trans_con]
 
-        wpt_local = []
-        rev_trans = []
-        for _pc, _wpt in zip(pc, wpt):
-            a, b = mvt_utils.place_pc_in_cube(
-                _pc,
-                _wpt,
-                with_mean_or_bounds=self._place_with_mean,
-                scene_bounds=None if self._place_with_mean else self.scene_bounds,
-            )
-            wpt_local.append(a.unsqueeze(0))
-            rev_trans.append(b)
+            wpt_local = []
+            rev_trans = []
+            for _pc, _wpt in zip(pc, wpt):
+                a, b = mvt_utils.place_pc_in_cube(
+                    _pc,
+                    _wpt,
+                    with_mean_or_bounds=self._place_with_mean,
+                    scene_bounds=None if self._place_with_mean else self.scene_bounds,
+                )
+                wpt_local.append(a.unsqueeze(0))
+                rev_trans.append(b)
+            wpt_local = torch.cat(wpt_local, axis=0)
 
-        wpt_local = torch.cat(wpt_local, axis=0)
         q_trans, rot_q, grip_q, collision_q, y_q, pts = self.get_q(
             out, dims=(bs, nc, h, w), only_pred=True, get_q_trans=True
         )
         pred_wpt, pred_rot_quat, pred_grip, pred_coll = self.get_pred(
             out, rot_q, grip_q, collision_q, y_q, rev_trans, dyn_cam_info
         )
-        action_trans = self.get_action_trans(
-            wpt_local, pts, out, dyn_cam_info, dims=(bs, nc, h, w)
-        )
-        (
-            action_rot_x_one_hot,
-            action_rot_y_one_hot,
-            action_rot_z_one_hot,
-            action_grip_one_hot, 
-            action_collision_one_hot, 
-        ) = self._get_one_hot_expert_actions(
-            bs, action_rot.cpu(), action_grip.cpu(), action_ignore_collisions.cpu(), device="cpu"
-        )
-        action_rot_x_one_hot = action_rot_x_one_hot.to(self._device)
-        action_rot_y_one_hot = action_rot_y_one_hot.to(self._device)
-        action_rot_z_one_hot = action_rot_z_one_hot.to(self._device)
-        action_grip_one_hot = action_grip_one_hot.to(self._device)
-        action_collision_one_hot = action_collision_one_hot.to(self._device)
         # for batched eval
         continuous_action = torch.cat(
             [
@@ -445,66 +458,86 @@ class SAM2Act_Agent2(SAM2Act_Agent):
                 pred_coll.cpu(),
             ],1
         ).numpy()
+        if compute_loss:
+            action_trans = self.get_action_trans(
+                wpt_local, pts, out, dyn_cam_info, dims=(bs, nc, h, w)
+            )
+            (
+                action_rot_x_one_hot,
+                action_rot_y_one_hot,
+                action_rot_z_one_hot,
+                action_grip_one_hot, 
+                action_collision_one_hot, 
+            ) = self._get_one_hot_expert_actions(
+                bs, action_rot.cpu(), action_grip.cpu(), action_ignore_collisions.cpu(), device="cpu"
+            )
+            action_rot_x_one_hot = action_rot_x_one_hot.to(self._device)
+            action_rot_y_one_hot = action_rot_y_one_hot.to(self._device)
+            action_rot_z_one_hot = action_rot_z_one_hot.to(self._device)
+            action_grip_one_hot = action_grip_one_hot.to(self._device)
+            action_collision_one_hot = action_collision_one_hot.to(self._device)
+            
 
-        trans_loss = self._cross_entropy_loss(q_trans, action_trans).mean()
-        rot_loss_x = rot_loss_y = rot_loss_z = 0.0
-        grip_loss = 0.0
-        collision_loss = 0.0
-        rot_loss_x = self._cross_entropy_loss(
-            rot_q[
-                :,
-                0 * self._num_rotation_classes : 1 * self._num_rotation_classes,
-            ],
-            action_rot_x_one_hot.argmax(-1),
-        ).mean()
+            trans_loss = self._cross_entropy_loss(q_trans, action_trans).mean()
+            rot_loss_x = rot_loss_y = rot_loss_z = 0.0
+            grip_loss = 0.0
+            collision_loss = 0.0
+            rot_loss_x = self._cross_entropy_loss(
+                rot_q[
+                    :,
+                    0 * self._num_rotation_classes : 1 * self._num_rotation_classes,
+                ],
+                action_rot_x_one_hot.argmax(-1),
+            ).mean()
 
-        rot_loss_y = self._cross_entropy_loss(
-            rot_q[
-                :,
-                1 * self._num_rotation_classes : 2 * self._num_rotation_classes,
-            ],
-            action_rot_y_one_hot.argmax(-1),
-        ).mean()
+            rot_loss_y = self._cross_entropy_loss(
+                rot_q[
+                    :,
+                    1 * self._num_rotation_classes : 2 * self._num_rotation_classes,
+                ],
+                action_rot_y_one_hot.argmax(-1),
+            ).mean()
 
-        rot_loss_z = self._cross_entropy_loss(
-            rot_q[
-                :,
-                2 * self._num_rotation_classes : 3 * self._num_rotation_classes,
-            ],
-            action_rot_z_one_hot.argmax(-1),
-        ).mean()
+            rot_loss_z = self._cross_entropy_loss(
+                rot_q[
+                    :,
+                    2 * self._num_rotation_classes : 3 * self._num_rotation_classes,
+                ],
+                action_rot_z_one_hot.argmax(-1),
+            ).mean()
 
-        grip_loss = self._cross_entropy_loss(
-            grip_q,
-            action_grip_one_hot.argmax(-1),
-        ).mean()
+            grip_loss = self._cross_entropy_loss(
+                grip_q,
+                action_grip_one_hot.argmax(-1),
+            ).mean()
 
-        collision_loss = self._cross_entropy_loss(
-            collision_q, action_collision_one_hot.argmax(-1)
-        ).mean()
+            collision_loss = self._cross_entropy_loss(
+                collision_q, action_collision_one_hot.argmax(-1)
+            ).mean()
 
-        total_loss = (
-            trans_loss
-            + rot_loss_x
-            + rot_loss_y
-            + rot_loss_z
-            + grip_loss
-            + collision_loss
-        )
+            total_loss = (
+                trans_loss
+                + rot_loss_x
+                + rot_loss_y
+                + rot_loss_z
+                + grip_loss
+                + collision_loss
+            )
 
 
-        loss_log = {
-            "total_loss": total_loss.item(),
-            "trans_loss": trans_loss.item(),
-            "rot_loss_x": rot_loss_x.item() if not self.use_memory else None,
-            "rot_loss_y": rot_loss_y.item() if not self.use_memory else None,
-            "rot_loss_z": rot_loss_z.item() if not self.use_memory else None,
-            "grip_loss": grip_loss.item() if not self.use_memory else None,
-            "collision_loss": collision_loss.item() if not self.use_memory else None,
-            "lr": self._optimizer.param_groups[0]["lr"],
-        }
-        return_out.update(loss_log)
-        return continuous_action,return_out
+            loss_log = {
+                "total_loss": total_loss.item(),
+                "trans_loss": trans_loss.item(),
+                "rot_loss_x": rot_loss_x.item() if not self.use_memory else None,
+                "rot_loss_y": rot_loss_y.item() if not self.use_memory else None,
+                "rot_loss_z": rot_loss_z.item() if not self.use_memory else None,
+                "grip_loss": grip_loss.item() if not self.use_memory else None,
+                "collision_loss": collision_loss.item() if not self.use_memory else None,
+                "lr": self._optimizer.param_groups[0]["lr"],
+            }
+            return_out.update(loss_log)
+            return continuous_action,return_out
+        return continuous_action
 
 def get_logdir(cmd_args, exp_cfg):
     exp = exp_cfg.exp_id + '_' + exp_cfg.exp_name

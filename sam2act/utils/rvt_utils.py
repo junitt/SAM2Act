@@ -80,6 +80,31 @@ def move_pc_in_bound(pc, img_feat, bounds, no_op=False):
     img_feat = [img_feat[i, ~_inv_pnt] for i, _inv_pnt in enumerate(inv_pnt)]
     return pc, img_feat
 
+def move_list_pc_in_bound(pc, img_feat, bounds, no_op=False):
+    """
+    :param no_op: no operation
+    """
+    if no_op:
+        return pc, img_feat
+
+    x_min, y_min, z_min, x_max, y_max, z_max = bounds
+    inv_pnt = [
+        (p[:, 0] < x_min)
+        | (p[:, 0]  > x_max)
+        | (p[:, 1] < y_min)
+        | (p[:, 1] > y_max)
+        | (p[:, 2] < z_min)
+        | (p[ :, 2] > z_max)
+        | torch.isnan(p[:, 0])
+        | torch.isnan(p[:, 1])
+        | torch.isnan(p[:, 2])
+        for p in pc
+    ]
+
+    # TODO: move from a list to a better batched version
+    pc = [pc[i][~_inv_pnt] for i, _inv_pnt in enumerate(inv_pnt)]
+    img_feat = [img_feat[i][~_inv_pnt] for i, _inv_pnt in enumerate(inv_pnt)]
+    return pc, img_feat
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -226,27 +251,48 @@ def get_eval_parser():
     parser.add_argument("--skip", action="store_true")
 
     return parser
-
+COLOSSEUM_TASK = [
+    "basketball_in_hoop",
+    "close_box",
+    "close_laptop_lid",
+    "empty_dishwasher",
+    "get_ice_from_fridge",
+    "hockey",
+    "meat_on_grill",
+    "move_hanger",
+    "wipe_desk",
+    "open_drawer",
+    "slide_block_to_target",
+    "reach_and_drag",
+    "put_money_in_safe",
+    "place_wine_at_rack_location",
+    "insert_onto_square_peg",
+    "stack_cups",
+    "turn_oven_on",
+    "straighten_rope",
+    "setup_chess",
+    "scoop_with_spatula",
+]
 
 RLBENCH_TASKS = [
-    # "put_item_in_drawer",
-    # "reach_and_drag",
-    # "turn_tap",
-    # "slide_block_to_color_target",
+    "put_item_in_drawer",
+    "reach_and_drag",
+    "turn_tap",
+    "slide_block_to_color_target",
     "open_drawer",
-    # "put_groceries_in_cupboard",
-    # "place_shape_in_shape_sorter",
-    # "put_money_in_safe",
-    # "push_buttons",
-    # "close_jar",
-    # "stack_blocks",
-    # "place_cups",
-    # "place_wine_at_rack_location",
-    # "light_bulb_in",
-    # "sweep_to_dustpan_of_size",
-    # "insert_onto_square_peg",
-    # "meat_off_grill",
-    # "stack_cups",
+    "put_groceries_in_cupboard",
+    "place_shape_in_shape_sorter",
+    "put_money_in_safe",
+    "push_buttons",
+    "close_jar",
+    "stack_blocks",
+    "place_cups",
+    "place_wine_at_rack_location",
+    "light_bulb_in",
+    "sweep_to_dustpan_of_size",
+    "insert_onto_square_peg",
+    "meat_off_grill",
+    "stack_cups",
 ]
 
 
