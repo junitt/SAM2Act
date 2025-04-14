@@ -51,6 +51,8 @@ class SAM2Act_Agent2(SAM2Act_Agent):
                 # print(f"color max{torch.max(torch.tensor(batch['pc_fts'][:, -3:]))}")
                 # print(f"color max{torch.min(torch.tensor(batch['pc_fts'][:, -3:]))}")
                 inp['img_feat']=[(batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] + 1)/2 for i in range(bs)]
+        for i in range(len(inp['img_feat'])):
+            inp['img_feat'][i] = torch.clamp(inp['img_feat'][i], min=None, max=0.99)
         if compute_loss:
             action_ignore_collisions = batch["gt_trajs_stop"].int()  # 转化成预测是否stop
             action_gripper_pose = batch['gt_trajs'][:,:-1].reshape(bs,7)  # (b, 7)
