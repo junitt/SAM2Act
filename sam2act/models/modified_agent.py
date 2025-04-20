@@ -42,7 +42,7 @@ class SAM2Act_Agent2(SAM2Act_Agent):
         inp['lang_goal_embs']=batch['txt_embeds'].reshape(bs,-1,512)
         inp['proprio']=batch['ee_poses']
         inp['pc']=[batch['pc_fts'][:, :3][offsets[i]:offsets[i+1]] for i in range(bs)]
-        if self.dataset_transform_color:
+        if self.dataset_transform_color and compute_loss==True:#val also demand loss
             inp['img_feat'] = [batch['pc_fts'][:, -3:][offsets[i]:offsets[i+1]] for i in range(bs)]
         else:
             if self.dataset_transform_color and compute_loss==False:
