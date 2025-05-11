@@ -24,7 +24,7 @@ import peract_colab.arm.utils as arm_utils
 from sam2act.mvt.augmentation import apply_se3_aug_con, apply_se3_aug_con_same, apply_se3_aug_con_sequence, apply_se3_aug_given_matrix, aug_utils
 from peract_colab.arm.optim.lamb import Lamb
 from yarr.agents.agent import ActResult
-from sam2act.utils.dataset import _clip_encode_text
+
 from sam2act.utils.lr_sched_utils import GradualWarmupScheduler
 
 
@@ -875,6 +875,7 @@ class SAM2Act_Agent:
     def act(
         self, step: int, observation: dict, deterministic=True, pred_distri=False
     ) -> ActResult:
+        from sam2act.utils.dataset import _clip_encode_text
         if self.add_lang:
             lang_goal_tokens = observation.get("lang_goal_tokens", None).long()
             _, lang_goal_embs = _clip_encode_text(self.clip_model, lang_goal_tokens[0])

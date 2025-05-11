@@ -5,7 +5,7 @@
 import torch
 from omegaconf import OmegaConf
 
-from sam2act.models.peract_official import create_agent_our
+
 from peract_colab.arm.utils import stack_on_channel
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from sam2act.utils.lr_sched_utils import GradualWarmupScheduler
@@ -67,6 +67,7 @@ def get_official_peract(
     :param device: device to build the agent on
     :param bs: batch size, does not matter when we need a model for inference.
     """
+    from sam2act.models.peract_official import create_agent_our
     with open(cfg_path, "r") as f:
         cfg = OmegaConf.load(f)
 

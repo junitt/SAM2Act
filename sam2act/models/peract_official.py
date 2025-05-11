@@ -3,7 +3,7 @@
 # Licensed under the NVIDIA Source Code License [see LICENSE for details].
 
 from sam2act.libs.peract.helpers.preprocess_agent import PreprocessAgent
-from sam2act.libs.peract.agents.peract_bc.launch_utils import create_agent
+
 
 
 class PreprocessAgent2(PreprocessAgent):
@@ -23,6 +23,7 @@ def create_agent_our(cfg):
     """
     Reuses the official peract agent, but replaces PreprocessAgent2 with PreprocessAgent
     """
+    from sam2act.libs.peract.agents.peract_bc.launch_utils import create_agent
     agent = create_agent(cfg)
     agent = agent._pose_agent
     agent = PreprocessAgent2(agent)
