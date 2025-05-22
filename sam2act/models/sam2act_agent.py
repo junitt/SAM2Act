@@ -9,8 +9,11 @@ import torch
 import torchvision
 import numpy as np
 import torch.nn as nn
-import bitsandbytes as bnb
-
+try:
+    import bitsandbytes as bnb
+    need_bnb=True
+except ImportError:
+    need_bnb=False
 from scipy.spatial.transform import Rotation
 from torch.cuda.amp import autocast, GradScaler
 from torch.nn.parallel.distributed import DistributedDataParallel
@@ -360,7 +363,7 @@ class SAM2Act_Agent:
         self.img_aug = img_aug
         self.add_rgc_loss = add_rgc_loss
         self.amp = amp
-        self.bnb = bnb
+        self.bnb = bnb and need_bnb
         self.stage_two = stage_two
         self.add_lang = add_lang
         self.log_dir = log_dir
@@ -641,7 +644,7 @@ class SAM2Act_Agent:
                     action_trans_con_after = []
                     action_rot_after = []
                     pc_after = []
-                    for seq_idx in range(num_seq):
+                    for seq_idx in range(num_seq):#绕z轴进行旋转增强。
                         pc_i = pc[seq_idx*num_obs:seq_idx*num_obs+num_obs]
                         action_gripper_pose_i = action_gripper_pose[seq_idx*num_obs:seq_idx*num_obs+num_obs]
                         action_trans_con_i, action_rot_i, pc_i = apply_se3_aug_con_same(
